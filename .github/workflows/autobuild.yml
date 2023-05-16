@@ -75,4 +75,4 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.${{ matrix.vst_ext }}"
-        path: "target/bundled/${{ matrix.vst_dir }}pxtone-plug.${{ matrix.vst_ext }}"
+        path: "target/bundled/pxtone-plug.vst3/${{ matrix.vst_dir }}pxtone-plug.${{ matrix.vst_ext }}"
