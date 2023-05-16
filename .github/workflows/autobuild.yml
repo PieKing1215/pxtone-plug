@@ -1,0 +1,45 @@
+name: Rust Build/Test/Bundle
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Build
+      run: cargo build --verbose
+      
+    - name: Run tests
+      run: cargo test --verbose
+      
+    - name: Bundle
+      run: cargo xtask bundle pxtone-plug --release
+      
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: "pxtone-plug-all-${{ steps.short-sha.outputs.sha }}"
+        path: target/bundled/
+        
+#     - name: Upload .clap
+#       uses: actions/upload-artifact@v3
+#       with:
+#         name: "pxtone-plug-${{ steps.short-sha.outputs.sha }}.clap"
+#         path: target/bundled/*.clap
+        
+#     - name: Upload .vst3
+#       uses: actions/upload-artifact@v3
+#       with:
+#         name: "pxtone-plug-${{ steps.short-sha.outputs.sha }}.vst3"
+#         path: target/bundled/Contents/x86_64-win/*.vst3
+        
