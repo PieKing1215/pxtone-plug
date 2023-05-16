@@ -1,0 +1,78 @@
+name: Rust Build/Test/Bundle
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: Swatinem/rust-cache@v2.2.1
+    
+    - name: Build
+      run: cargo build --verbose
+      
+    - name: Run tests
+      run: cargo test --verbose
+  
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: 
+          - ubuntu-latest
+          - windows-latest
+#           - macos-latest # pxtone-sys doesn't work on mac yet
+        include:
+          - os: ubuntu-latest
+            name: linux
+            vst_dir: Contents/x86_64-linux/
+            vst_ext: so
+            xtask: bundle
+          - os: windows-latest
+            name: win
+            vst_dir: Contents/x86_64-win/
+            vst_ext: vst3
+            xtask: bundle
+#           - os: macos-latest # pxtone-sys doesn't work on mac yet
+#             name: macos
+#             vst_dir: Contents/x86_64-mac/
+#             vst_ext: vst3
+#             xtask: bundle-universal
+            
+    runs-on: ${{ matrix.os }}
+    needs: build
+    steps:
+    - uses: actions/checkout@v3
+    - uses: benjlevesque/short-sha@v2.1
+      id: short-sha
+    - uses: Swatinem/rust-cache@v2.2.1
+      
+    - name: Bundle
+      run: cargo xtask ${{ matrix.xtask }} pxtone-plug --release
+      
+#     - name: Upload a Build Artifact
+#       uses: actions/upload-artifact@v3
+#       with:
+#         name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}"
+#         path: target/bundled/
+        
+    - name: Upload CLAP
+      uses: actions/upload-artifact@v3
+      with:
+        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.clap"
+        path: target/bundled/pxtone-plug.clap
+        
+    - name: Upload VST3
+      uses: actions/upload-artifact@v3
+      with:
+        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.${{ matrix.vst_ext }}"
+        path: "target/bundled/pxtone-plug.vst3/${{ matrix.vst_dir }}pxtone-plug.${{ matrix.vst_ext }}"
