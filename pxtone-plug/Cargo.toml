@@ -1,0 +1,13 @@
+[package]
+name = "pxtone-plug"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug", rev = "727b15a" }
+pxtone-sys = { git = "https://github.com/PieKing1215/rust-pxtone-sys" }
+log = "0.4"
+simplelog = { version = "0.12", default-features = false, features = ["local-offset"] }
+
+[lib]
+crate-type = ["cdylib"]

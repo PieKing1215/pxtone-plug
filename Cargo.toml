@@ -1,0 +1,2 @@
+[workspace]
+members = ["pxtone-plug", "xtask"]
