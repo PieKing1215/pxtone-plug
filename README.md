@@ -14,11 +14,21 @@ A **work in progress** VST®3 and CLAP instrument plugin for pxtone woices.
 
 Feel free to suggest more
 
+## Installing
+
+There are no stable releases right now.<br>
+Automated dev builds can be downloaded in [here](https://github.com/PieKing1215/pxtone-plug/actions/workflows/autobuild.yml?query=branch%3Amaster) after signing in to GitHub.
+
+## Usage
+
+Use the `.vst3` file as a VST3 plugin or use the `.clap` file as a CLAP plugin.<br>
+If you need to run pxtone Plug as a VST2, you must use something like [Element](https://github.com/kushview/element) to bridge the gap.
+
 ## Building
 
 1. Install [Rust](https://www.rust-lang.org/learn/get-started)
 2. Clone this repo
-3. Run `cargo xtask bundle pxtone-plug`
+3. Run `cargo xtask bundle pxtone-plug --release`
 
 If it succeeds, there should be a .clap and a .vst3 somewhere in the `target/bundled/` folder.<br>
 If not, or if it fails, please [open an issue](https://github.com/PieKing1215/pxtone-plug/issues).
