@@ -2,6 +2,12 @@
 name = "pxtone-plug"
 version = "0.1.0"
 edition = "2021"
+description = "VST3/CLAP plugin for playing pxtone woices"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/PieKing1215/pxtone-plug"
+readme = "README.md"
+keywords = ["pxtone", "VST", "VST3", "CLAP"]
+categories = ["multimedia::audio"]
 
 [dependencies]
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug", rev = "727b15a" }

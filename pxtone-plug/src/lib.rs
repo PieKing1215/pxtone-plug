@@ -1,3 +1,10 @@
+#![deny(clippy::all)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::cast_lossless)]
+
 use log::{LevelFilter, Log, RecordBuilder};
 use nih_plug::prelude::*;
 use pxtone_sys::{
@@ -81,9 +88,7 @@ impl Default for PtPlug {
             }
 
             let mut freq = pxtnPulse_Frequency::new();
-            if !freq.Init() {
-                panic!("freq Init");
-            }
+            assert!(freq.Init(), "freq Init");
 
             let mut descriptor = pxtnDescriptor::new();
 
@@ -146,6 +151,7 @@ impl Default for PtParams {
 }
 
 impl PtPlug {
+    #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
     fn sample(&mut self) -> [f32; 2] {
         // ported from some original pxtone code not included in pxtone-sys
 
@@ -157,15 +163,8 @@ impl PtPlug {
         unsafe {
             // update envelope
             for tone in &mut self.tones {
+                #[allow(clippy::used_underscore_binding)]
                 for v in 0..self.pxtn_woice._voice_num as usize {
-                    let vi = &mut {
-                        std::slice::from_raw_parts_mut(
-                            self.pxtn_woice._voinsts,
-                            pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
-                        )
-                    }[v];
-                    let vt = &mut tone.voice_tones[v];
-
                     unsafe fn update_env(
                         vi: &mut pxtone_sys::pxtnVOICEINSTANCE,
                         vt: &mut pxtnVOICETONE,
@@ -177,7 +176,7 @@ impl PtPlug {
 
                         if on {
                             if vt.env_pos < vi.env_size {
-                                vt.env_volume = *vi.p_env.offset(vt.env_pos as _) as _;
+                                vt.env_volume = i32::from(*vi.p_env.offset(vt.env_pos as _));
                                 vt.env_pos += 1;
                             }
                         } else {
@@ -192,6 +191,15 @@ impl PtPlug {
                         }
                     }
 
+                    let vi = &mut {
+                        #[allow(clippy::used_underscore_binding)]
+                        std::slice::from_raw_parts_mut(
+                            self.pxtn_woice._voinsts,
+                            pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
+                        )
+                    }[v];
+                    let vt = &mut tone.voice_tones[v];
+
                     update_env(vi, vt, tone.on);
                 }
             }
@@ -201,8 +209,10 @@ impl PtPlug {
                 for tone in &mut self.tones {
                     let mut pan_buf: i32 = 0;
 
+                    #[allow(clippy::used_underscore_binding)]
                     for v in 0..self.pxtn_woice._voice_num as usize {
                         let vi = &mut {
+                            #[allow(clippy::used_underscore_binding)]
                             std::slice::from_raw_parts_mut(
                                 self.pxtn_woice._voinsts,
                                 pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
@@ -212,6 +222,7 @@ impl PtPlug {
 
                         let mut work: i32 = 0;
 
+                        #[allow(clippy::cast_ptr_alignment)]
                         if vt.life_count > 0 {
                             let pos = vt.smp_pos as i32 * 4 + ch as i32 * 2;
                             work += *vi.p_smp_w.offset(pos as _).cast::<i16>() as i32;
@@ -281,7 +292,7 @@ impl PtPlug {
                     work += tone.time_pan_buf[ch][index as usize];
                 }
 
-                out[ch] += (work as f32 / 0x7fff as f32).clamp(-1.0, 1.0);
+                out[ch] += (work as f64 / 0x7fff as f64).clamp(-1.0, 1.0);
             }
 
             self.time_pan_index =
@@ -290,7 +301,7 @@ impl PtPlug {
             self.tones
                 .retain(|t| t.voice_tones.iter().any(|vt| vt.life_count > 0));
 
-            out
+            out.map(|f| f as _)
         }
     }
 }
@@ -362,6 +373,7 @@ impl Plugin for PtPlug {
 
             if let Some(logger) = &self.logger {
                 logger.log(
+                    #[allow(clippy::used_underscore_binding)]
                     &RecordBuilder::new()
                         .args(format_args!(
                             "sps {} smp_body_w = {}",
@@ -382,6 +394,7 @@ impl Plugin for PtPlug {
         self.tones.clear();
     }
 
+    #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
     fn process(
         &mut self,
         buffer: &mut Buffer,
@@ -462,6 +475,7 @@ impl Plugin for PtPlug {
                                     }
                                 }
 
+                                #[allow(clippy::used_underscore_binding)]
                                 for v in 0..self.pxtn_woice._voice_num as usize {
                                     let vi = &mut {
                                         std::slice::from_raw_parts_mut(
@@ -477,15 +491,13 @@ impl Plugin for PtPlug {
                                     vt.smp_count = 0;
                                     vt.env_pos = 0;
 
-                                    if vu.voice_flags & pxtone_sys::PTV_VOICEFLAG_BEATFIT != 0 {
-                                        // ?
-                                    } else {
+                                    if vu.voice_flags & pxtone_sys::PTV_VOICEFLAG_BEATFIT == 0 {
                                         vt.offset_freq = self.pxtn_freq.Get(
                                             pxtone_sys::EVENTDEFAULT_BASICKEY as i32 - vu.basic_key,
                                         ) * vu.tuning;
                                     }
 
-                                    if vi.env_size != 0 {
+                                    if vi.env_size > 0 {
                                         vt.env_volume = 0;
                                         vt.env_start = 0;
                                     } else {
@@ -504,6 +516,7 @@ impl Plugin for PtPlug {
                                 self.tones.iter_mut().find(|t| t.on && t.note_id == note)
                             {
                                 tone.on = false;
+                                #[allow(clippy::used_underscore_binding)]
                                 for v in 0..self.pxtn_woice._voice_num as usize {
                                     let vt = &mut tone.voice_tones[v];
                                     vt.env_start = vt.env_volume;
