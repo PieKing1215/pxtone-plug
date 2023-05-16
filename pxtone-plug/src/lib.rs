@@ -5,8 +5,12 @@
 #![allow(clippy::cast_sign_loss)]
 #![allow(clippy::cast_lossless)]
 
+mod editor;
+
 use log::{LevelFilter, Log, RecordBuilder};
+use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
+use nih_plug_vizia::ViziaState;
 use pxtone_sys::{
     pxtnDescriptor, pxtnError_get_string, pxtnPulse_Frequency, pxtnService, pxtnVOICETONE,
     pxtnWoice,
@@ -14,26 +18,42 @@ use pxtone_sys::{
 use simplelog::{Config, WriteLogger};
 use std::ffi::CStr;
 use std::fs::File;
-use std::sync::Arc;
+use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::{Arc, RwLock};
 
 struct PtPlug {
     params: Arc<PtParams>,
-    sample_rate: f32,
+    sample_rate: Option<f32>,
 
     master_gain: Smoother<f32>,
+
+    logger: Option<Arc<WriteLogger<File>>>,
+
+    file_select_recv: Receiver<FileSelectPayload>,
+    file_select_send: SyncSender<FileSelectPayload>,
 
     pxtn_serv: pxtnService,
     pxtn_freq: pxtnPulse_Frequency,
 
-    pxtn_woice: pxtnWoice,
-    pxtn_time_pan: [i32; pxtone_sys::pxtnMAX_CHANNEL as _],
-    pxtn_vol_pan: [i32; pxtone_sys::pxtnMAX_CHANNEL as _],
+    woice_state: WoiceState,
+}
 
-    tones: Vec<Tone>,
+struct FileSelectPayload {
+    file_data: Vec<u8>,
+    file_name: String,
+}
 
-    time_pan_index: usize,
+enum WoiceState {
+    Unloaded,
+    Loaded {
+        pxtn_woice: pxtnWoice,
+        pxtn_time_pan: [i32; pxtone_sys::pxtnMAX_CHANNEL as _],
+        pxtn_vol_pan: [i32; pxtone_sys::pxtnMAX_CHANNEL as _],
 
-    logger: Option<Box<WriteLogger<File>>>,
+        tones: Vec<Tone>,
+
+        time_pan_index: usize,
+    },
 }
 
 struct Tone {
@@ -50,6 +70,15 @@ unsafe impl Send for PtPlug {}
 
 #[derive(Params)]
 struct PtParams {
+    #[persist = "editor-state"]
+    editor_state: Arc<ViziaState>,
+
+    #[persist = "file-data"]
+    file_data: Arc<RwLock<Option<Vec<u8>>>>,
+
+    #[persist = "woice-name"]
+    woice_name: Arc<RwLock<Option<String>>>,
+
     #[id = "gain"]
     pub gain: FloatParam,
 }
@@ -90,19 +119,67 @@ impl Default for PtPlug {
             let mut freq = pxtnPulse_Frequency::new();
             assert!(freq.Init(), "freq Init");
 
+            let (send, recv) = std::sync::mpsc::sync_channel(1);
+
+            Self {
+                params: Arc::new(PtParams::default()),
+                sample_rate: None,
+
+                master_gain: Smoother::new(SmoothingStyle::Linear(5.0)),
+
+                pxtn_serv: serv,
+                pxtn_freq: freq,
+
+                woice_state: WoiceState::Unloaded,
+
+                logger: logger.map(|bl| Arc::new(*bl)),
+
+                file_select_recv: recv,
+                file_select_send: send,
+            }
+        }
+    }
+}
+
+impl Default for PtParams {
+    fn default() -> Self {
+        Self {
+            editor_state: editor::default_state(),
+            gain: FloatParam::new("Gain", -10.0, FloatRange::Linear { min: -30.0, max: 0.0 })
+                .with_smoother(SmoothingStyle::Linear(3.0))
+                .with_step_size(0.01)
+                .with_unit(" dB"),
+            file_data: Arc::default(),
+            woice_name: Arc::default(),
+        }
+    }
+}
+
+impl PtPlug {
+    fn load_file(&mut self, file: FileSelectPayload) {
+        self.load_file_data(&file.file_data);
+
+        self.params.file_data.set(Some(file.file_data));
+        self.params.woice_name.set(Some(file.file_name));
+
+        if self.sample_rate.is_some() {
+            self.init_woice();
+        }
+    }
+
+    fn load_file_data(&mut self, file_data: &[u8]) {
+        unsafe {
             let mut descriptor = pxtnDescriptor::new();
 
-            let bytes = include_bytes!("../res/piano_EL4.ptvoice");
-
-            println!("Loading {} bytes", bytes.len());
-            descriptor.set_memory_r(bytes as *const _ as *mut _, bytes.len() as i32);
+            println!("Loading {} bytes", file_data.len());
+            descriptor.set_memory_r(file_data as *const _ as *mut _, file_data.len() as i32);
 
             let mut woice = pxtnWoice::new();
             woice.Voice_Allocate(pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _);
 
             match woice.PTV_Read(&mut descriptor) {
                 0 => {
-                    if let Some(logger) = &logger {
+                    if let Some(logger) = &self.logger {
                         logger.log(
                             &RecordBuilder::new()
                                 .args(format_args!("woice.PTV_Read OK"))
@@ -116,15 +193,7 @@ impl Default for PtPlug {
                 ),
             }
 
-            Self {
-                params: Arc::new(PtParams::default()),
-                sample_rate: 1.0,
-
-                master_gain: Smoother::new(SmoothingStyle::Linear(5.0)),
-
-                pxtn_serv: serv,
-                pxtn_freq: freq,
-
+            self.woice_state = WoiceState::Loaded {
                 pxtn_woice: woice,
                 pxtn_time_pan: [0; pxtone_sys::pxtnMAX_CHANNEL as _],
                 pxtn_vol_pan: [0; pxtone_sys::pxtnMAX_CHANNEL as _],
@@ -132,176 +201,222 @@ impl Default for PtPlug {
                 time_pan_index: 0,
 
                 tones: vec![],
-
-                logger,
-            }
+            };
         }
     }
-}
 
-impl Default for PtParams {
-    fn default() -> Self {
-        Self {
-            gain: FloatParam::new("Gain", -10.0, FloatRange::Linear { min: -30.0, max: 0.0 })
-                .with_smoother(SmoothingStyle::Linear(3.0))
-                .with_step_size(0.01)
-                .with_unit(" dB"),
-        }
-    }
-}
-
-impl PtPlug {
     #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
     fn sample(&mut self) -> [f32; 2] {
         // ported from some original pxtone code not included in pxtone-sys
 
+        let Some(sample_rate) = self.sample_rate else {
+            return [0.0; 2]
+        };
+
         let dst_ch: usize = 2;
         let loop_ = true;
-        let min_ct = self.sample_rate as i32 * 100 / 1000;
-        let smooth = self.sample_rate as i32 / 100;
+        let min_ct = sample_rate as i32 * 100 / 1000;
+        let smooth = sample_rate as i32 / 100;
 
         unsafe {
-            // update envelope
-            for tone in &mut self.tones {
-                #[allow(clippy::used_underscore_binding)]
-                for v in 0..self.pxtn_woice._voice_num as usize {
-                    unsafe fn update_env(
-                        vi: &mut pxtone_sys::pxtnVOICEINSTANCE,
-                        vt: &mut pxtnVOICETONE,
-                        on: bool,
-                    ) {
-                        if vt.life_count <= 0 || vi.env_size == 0 {
-                            return;
-                        }
+            if let WoiceState::Loaded {
+                pxtn_woice,
+                pxtn_time_pan,
+                pxtn_vol_pan,
+                tones,
+                time_pan_index,
+            } = &mut self.woice_state
+            {
+                // update envelope
+                for tone in &mut *tones {
+                    #[allow(clippy::used_underscore_binding)]
+                    for v in 0..pxtn_woice._voice_num as usize {
+                        unsafe fn update_env(
+                            vi: &mut pxtone_sys::pxtnVOICEINSTANCE,
+                            vt: &mut pxtnVOICETONE,
+                            on: bool,
+                        ) {
+                            if vt.life_count <= 0 || vi.env_size == 0 {
+                                return;
+                            }
 
-                        if on {
-                            if vt.env_pos < vi.env_size {
-                                vt.env_volume = i32::from(*vi.p_env.offset(vt.env_pos as _));
+                            if on {
+                                if vt.env_pos < vi.env_size {
+                                    vt.env_volume = i32::from(*vi.p_env.offset(vt.env_pos as _));
+                                    vt.env_pos += 1;
+                                }
+                            } else {
+                                if vt.env_pos < vi.env_release {
+                                    vt.env_volume = vt.env_start
+                                        + (-vt.env_start * vt.env_pos / vi.env_release);
+                                } else {
+                                    vt.life_count = 0;
+                                    vt.env_volume = 0;
+                                }
                                 vt.env_pos += 1;
                             }
-                        } else {
-                            if vt.env_pos < vi.env_release {
-                                vt.env_volume =
-                                    vt.env_start + (-vt.env_start * vt.env_pos / vi.env_release);
-                            } else {
-                                vt.life_count = 0;
-                                vt.env_volume = 0;
-                            }
-                            vt.env_pos += 1;
                         }
-                    }
 
-                    let vi = &mut {
-                        #[allow(clippy::used_underscore_binding)]
-                        std::slice::from_raw_parts_mut(
-                            self.pxtn_woice._voinsts,
-                            pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
-                        )
-                    }[v];
-                    let vt = &mut tone.voice_tones[v];
-
-                    update_env(vi, vt, tone.on);
-                }
-            }
-
-            // sample into time pan buffer
-            for ch in 0..dst_ch {
-                for tone in &mut self.tones {
-                    let mut pan_buf: i32 = 0;
-
-                    #[allow(clippy::used_underscore_binding)]
-                    for v in 0..self.pxtn_woice._voice_num as usize {
                         let vi = &mut {
                             #[allow(clippy::used_underscore_binding)]
                             std::slice::from_raw_parts_mut(
-                                self.pxtn_woice._voinsts,
+                                pxtn_woice._voinsts,
                                 pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
                             )
                         }[v];
                         let vt = &mut tone.voice_tones[v];
 
-                        let mut work: i32 = 0;
+                        update_env(vi, vt, tone.on);
+                    }
+                }
 
-                        #[allow(clippy::cast_ptr_alignment)]
-                        if vt.life_count > 0 {
-                            let pos = vt.smp_pos as i32 * 4 + ch as i32 * 2;
-                            work += *vi.p_smp_w.offset(pos as _).cast::<i16>() as i32;
+                // sample into time pan buffer
+                #[allow(clippy::needless_range_loop)]
+                for ch in 0..dst_ch {
+                    for tone in &mut *tones {
+                        let mut pan_buf: i32 = 0;
 
-                            if dst_ch == 1 {
-                                work += *vi.p_smp_w.offset((pos + 2) as _).cast::<i16>() as i32;
-                                work /= 2;
-                            }
+                        #[allow(clippy::used_underscore_binding)]
+                        for v in 0..pxtn_woice._voice_num as usize {
+                            let vi = &mut {
+                                #[allow(clippy::used_underscore_binding)]
+                                std::slice::from_raw_parts_mut(
+                                    pxtn_woice._voinsts,
+                                    pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
+                                )
+                            }[v];
+                            let vt = &mut tone.voice_tones[v];
 
-                            work = (work * tone.velocity as i32) / 128;
-                            work = (work * self.pxtn_vol_pan[ch]) / 64;
+                            let mut work: i32 = 0;
 
-                            if vi.env_release > 0 {
-                                work = (work * vt.env_volume) / 128;
-                            } else if loop_ && vt.smp_count > min_ct - smooth {
-                                work = (min_ct - smooth) / smooth;
-                            }
+                            #[allow(clippy::cast_ptr_alignment)]
+                            if vt.life_count > 0 {
+                                let pos = vt.smp_pos as i32 * 4 + ch as i32 * 2;
+                                work += *vi.p_smp_w.offset(pos as _).cast::<i16>() as i32;
 
-                            vt.smp_pos += vi.smp_body_w as f64 * tone.note_freq as f64
-                                / self.sample_rate as f64
-                                * vt.offset_freq as f64
-                                / 4.0;
-
-                            if loop_ {
-                                if vt.smp_pos >= vi.smp_body_w as _ {
-                                    vt.smp_pos -= vi.smp_body_w as f64;
+                                if dst_ch == 1 {
+                                    work += *vi.p_smp_w.offset((pos + 2) as _).cast::<i16>() as i32;
+                                    work /= 2;
                                 }
 
-                                if vt.smp_pos >= vi.smp_body_w as _ {
-                                    vt.smp_pos = 0.0;
+                                work = (work * tone.velocity as i32) / 128;
+                                work = (work * pxtn_vol_pan[ch]) / 64;
+
+                                if vi.env_release > 0 {
+                                    work = (work * vt.env_volume) / 128;
+                                } else if loop_ && vt.smp_count > min_ct - smooth {
+                                    work = (min_ct - smooth) / smooth;
                                 }
 
-                                if vi.smp_tail_w == 0 && vi.env_release == 0 && !tone.on {
-                                    vt.smp_count += 1;
+                                vt.smp_pos += vi.smp_body_w as f64 * tone.note_freq as f64
+                                    / sample_rate as f64
+                                    * vt.offset_freq as f64
+                                    / 4.0;
+
+                                if loop_ {
+                                    if vt.smp_pos >= vi.smp_body_w as _ {
+                                        vt.smp_pos -= vi.smp_body_w as f64;
+                                    }
+
+                                    if vt.smp_pos >= vi.smp_body_w as _ {
+                                        vt.smp_pos = 0.0;
+                                    }
+
+                                    if vi.smp_tail_w == 0 && vi.env_release == 0 && !tone.on {
+                                        vt.smp_count += 1;
+                                    }
+                                } else {
+                                    if vt.smp_pos >= vi.smp_body_w as _ {
+                                        vt.life_count = 0;
+                                    }
+
+                                    if !tone.on {
+                                        vt.smp_count += 1;
+                                    }
                                 }
-                            } else {
-                                if vt.smp_pos >= vi.smp_body_w as _ {
+
+                                if vt.smp_count >= min_ct {
                                     vt.life_count = 0;
                                 }
-
-                                if !tone.on {
-                                    vt.smp_count += 1;
-                                }
                             }
 
-                            if vt.smp_count >= min_ct {
-                                vt.life_count = 0;
-                            }
+                            pan_buf += work;
                         }
 
-                        pan_buf += work;
+                        tone.time_pan_buf[ch][*time_pan_index] = pan_buf;
+                    }
+                }
+
+                // update time pan & calc output
+                let mut out = [0.0; 2];
+                #[allow(clippy::needless_range_loop)] // terrible suggestion
+                for ch in 0..dst_ch {
+                    let mut work: i32 = 0;
+
+                    for tone in &mut *tones {
+                        let index = (*time_pan_index as i32 - pxtn_time_pan[ch])
+                            & (pxtone_sys::pxtnBUFSIZE_TIMEPAN - 1) as i32;
+                        work += tone.time_pan_buf[ch][index as usize];
                     }
 
-                    tone.time_pan_buf[ch][self.time_pan_index] = pan_buf;
-                }
-            }
-
-            // update time pan & calc output
-            let mut out = [0.0; 2];
-            #[allow(clippy::needless_range_loop)] // terrible suggestion
-            for ch in 0..dst_ch {
-                let mut work: i32 = 0;
-
-                for tone in &self.tones {
-                    let index = (self.time_pan_index as i32 - self.pxtn_time_pan[ch])
-                        & (pxtone_sys::pxtnBUFSIZE_TIMEPAN - 1) as i32;
-                    work += tone.time_pan_buf[ch][index as usize];
+                    out[ch] += (work as f64 / 0x7fff as f64).clamp(-1.0, 1.0);
                 }
 
-                out[ch] += (work as f64 / 0x7fff as f64).clamp(-1.0, 1.0);
+                *time_pan_index =
+                    (*time_pan_index + 1) & (pxtone_sys::pxtnBUFSIZE_TIMEPAN as usize - 1);
+
+                tones.retain(|t| t.voice_tones.iter().any(|vt| vt.life_count > 0));
+
+                out.map(|f| f as _)
+            } else {
+                [0.0; 2]
+            }
+        }
+    }
+
+    fn init_woice(&mut self) {
+        let Some(sample_rate) = self.sample_rate else {
+            return
+        };
+
+        unsafe {
+            if !self
+                .pxtn_serv
+                .set_destination_quality(2, sample_rate as i32)
+            {
+                panic!("serv.set_destination_quality() failed");
             }
 
-            self.time_pan_index =
-                (self.time_pan_index + 1) & (pxtone_sys::pxtnBUFSIZE_TIMEPAN as usize - 1);
+            if let WoiceState::Loaded { pxtn_woice, .. } = &mut self.woice_state {
+                match pxtn_woice.Tone_Ready(std::ptr::null(), sample_rate as i32) {
+                    0 => {
+                        if let Some(logger) = &self.logger {
+                            logger.log(
+                                &RecordBuilder::new()
+                                    .args(format_args!("woice.Tone_Ready OK"))
+                                    .build(),
+                            );
+                        }
+                    },
+                    n => panic!(
+                        "Tone_Ready {}",
+                        CStr::from_ptr(pxtnError_get_string(n)).to_str().unwrap()
+                    ),
+                }
 
-            self.tones
-                .retain(|t| t.voice_tones.iter().any(|vt| vt.life_count > 0));
-
-            out.map(|f| f as _)
+                if let Some(logger) = &self.logger {
+                    logger.log(
+                        #[allow(clippy::used_underscore_binding)]
+                        &RecordBuilder::new()
+                            .args(format_args!(
+                                "sps {} smp_body_w = {}",
+                                sample_rate,
+                                (*pxtn_woice._voinsts).smp_body_w
+                            ))
+                            .build(),
+                    );
+                }
+            }
         }
     }
 }
@@ -336,54 +451,34 @@ impl Plugin for PtPlug {
         self.params.clone()
     }
 
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(
+            self.params.clone(),
+            self.params.editor_state.clone(),
+            self.logger.clone(),
+            self.file_select_send.clone(),
+        )
+    }
+
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        self.sample_rate = buffer_config.sample_rate;
+        self.sample_rate = Some(buffer_config.sample_rate);
 
-        unsafe {
-            if !self
-                .pxtn_serv
-                .set_destination_quality(2, self.sample_rate as i32)
-            {
-                panic!("serv.set_destination_quality() failed");
-            }
+        if let WoiceState::Unloaded = self.woice_state {
+            let fd_rw = self.params.file_data.read().unwrap();
+            let fd = fd_rw.as_ref().cloned();
+            drop(fd_rw);
 
-            match self
-                .pxtn_woice
-                .Tone_Ready(std::ptr::null(), self.sample_rate as i32)
-            {
-                0 => {
-                    if let Some(logger) = &self.logger {
-                        logger.log(
-                            &RecordBuilder::new()
-                                .args(format_args!("woice.Tone_Ready OK"))
-                                .build(),
-                        );
-                    }
-                },
-                n => panic!(
-                    "Tone_Ready {}",
-                    CStr::from_ptr(pxtnError_get_string(n)).to_str().unwrap()
-                ),
-            }
-
-            if let Some(logger) = &self.logger {
-                logger.log(
-                    #[allow(clippy::used_underscore_binding)]
-                    &RecordBuilder::new()
-                        .args(format_args!(
-                            "sps {} smp_body_w = {}",
-                            self.sample_rate,
-                            (*self.pxtn_woice._voinsts).smp_body_w
-                        ))
-                        .build(),
-                );
+            if let Some(fd) = fd {
+                self.load_file_data(&fd);
             }
         }
+
+        self.init_woice();
 
         true
     }
@@ -391,7 +486,9 @@ impl Plugin for PtPlug {
     fn reset(&mut self) {
         self.master_gain.reset(0.0);
 
-        self.tones.clear();
+        if let WoiceState::Loaded { tones, .. } = &mut self.woice_state {
+            tones.clear();
+        }
     }
 
     #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
@@ -403,11 +500,21 @@ impl Plugin for PtPlug {
     ) -> ProcessStatus {
         let dst_ch: usize = 2;
 
+        let Some(sample_rate) = self.sample_rate else {
+            return ProcessStatus::KeepAlive;
+        };
+
+        if let Ok(file_data) = self.file_select_recv.try_recv() {
+            self.load_file(file_data);
+        }
+
         let mut next_event = context.next_event();
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
             let gain = self.params.gain.smoothed.next();
 
-            let sample = {
+            if let WoiceState::Loaded { pxtn_woice, pxtn_time_pan, pxtn_vol_pan, tones, .. } =
+                &mut self.woice_state
+            {
                 // Act on the next MIDI event
                 while let Some(event) = next_event {
                     if event.timing() > sample_id as u32 {
@@ -416,7 +523,7 @@ impl Plugin for PtPlug {
 
                     match event {
                         NoteEvent::NoteOn { note, velocity, .. } => {
-                            self.master_gain.set_target(self.sample_rate, velocity);
+                            self.master_gain.set_target(sample_rate, velocity);
 
                             let mut tone = Tone {
                                 on: true,
@@ -441,50 +548,50 @@ impl Plugin for PtPlug {
                             };
 
                             unsafe {
-                                self.pxtn_vol_pan[0] = 64;
-                                self.pxtn_vol_pan[1] = 64;
+                                pxtn_vol_pan[0] = 64;
+                                pxtn_vol_pan[1] = 64;
                                 if dst_ch == 2 {
                                     let vol_pan = 64; // TODO
 
                                     if vol_pan >= 64 {
-                                        self.pxtn_vol_pan[0] = 128 - vol_pan;
+                                        pxtn_vol_pan[0] = 128 - vol_pan;
                                     } else {
-                                        self.pxtn_vol_pan[1] = vol_pan;
+                                        pxtn_vol_pan[1] = vol_pan;
                                     }
                                 }
 
-                                self.pxtn_time_pan[0] = 0;
-                                self.pxtn_time_pan[1] = 0;
+                                pxtn_time_pan[0] = 0;
+                                pxtn_time_pan[1] = 0;
                                 if dst_ch == 2 {
                                     let time_pan = 64; // TODO
 
                                     if time_pan >= 64 {
-                                        self.pxtn_time_pan[0] = time_pan - 64;
-                                        if self.pxtn_time_pan[0] >= 64 {
-                                            self.pxtn_time_pan[0] = 63;
+                                        pxtn_time_pan[0] = time_pan - 64;
+                                        if pxtn_time_pan[0] >= 64 {
+                                            pxtn_time_pan[0] = 63;
                                         }
-                                        self.pxtn_time_pan[0] =
-                                            self.pxtn_time_pan[0] * 44100 / self.sample_rate as i32;
+                                        pxtn_time_pan[0] =
+                                            pxtn_time_pan[0] * 44100 / sample_rate as i32;
                                     } else {
-                                        self.pxtn_time_pan[1] = 64 - time_pan;
-                                        if self.pxtn_time_pan[1] >= 64 {
-                                            self.pxtn_time_pan[1] = 63;
+                                        pxtn_time_pan[1] = 64 - time_pan;
+                                        if pxtn_time_pan[1] >= 64 {
+                                            pxtn_time_pan[1] = 63;
                                         }
-                                        self.pxtn_time_pan[1] =
-                                            self.pxtn_time_pan[1] * 44100 / self.sample_rate as i32;
+                                        pxtn_time_pan[1] =
+                                            pxtn_time_pan[1] * 44100 / sample_rate as i32;
                                     }
                                 }
 
                                 #[allow(clippy::used_underscore_binding)]
-                                for v in 0..self.pxtn_woice._voice_num as usize {
+                                for v in 0..pxtn_woice._voice_num as usize {
                                     let vi = &mut {
                                         std::slice::from_raw_parts_mut(
-                                            self.pxtn_woice._voinsts,
+                                            pxtn_woice._voinsts,
                                             pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
                                         )
                                     }[v];
                                     let vt = &mut tone.voice_tones[v];
-                                    let vu = &*self.pxtn_woice.get_voice(v as _);
+                                    let vu = &*pxtn_woice.get_voice(v as _);
 
                                     vt.life_count = 1;
                                     vt.smp_pos = 0.0;
@@ -507,17 +614,16 @@ impl Plugin for PtPlug {
                                 }
                             }
 
-                            self.tones.push(tone);
+                            tones.push(tone);
                         },
                         NoteEvent::NoteOff { note, .. } => {
-                            self.master_gain.set_target(self.sample_rate, 0.0);
+                            self.master_gain.set_target(sample_rate, 0.0);
 
-                            if let Some(tone) =
-                                self.tones.iter_mut().find(|t| t.on && t.note_id == note)
+                            if let Some(tone) = tones.iter_mut().find(|t| t.on && t.note_id == note)
                             {
                                 tone.on = false;
                                 #[allow(clippy::used_underscore_binding)]
-                                for v in 0..self.pxtn_woice._voice_num as usize {
+                                for v in 0..pxtn_woice._voice_num as usize {
                                     let vt = &mut tone.voice_tones[v];
                                     vt.env_start = vt.env_volume;
                                     vt.env_pos = 0;
@@ -525,19 +631,19 @@ impl Plugin for PtPlug {
                             }
                         },
                         NoteEvent::PolyPressure { note: _, pressure, .. } => {
-                            self.master_gain.set_target(self.sample_rate, pressure);
+                            self.master_gain.set_target(sample_rate, pressure);
                         },
                         NoteEvent::Choke { note, .. } => {
-                            self.tones.retain(|t| t.note_id != note);
+                            tones.retain(|t| t.note_id != note);
                         },
                         _ => (),
                     }
 
                     next_event = context.next_event();
                 }
-
-                self.sample()
             };
+
+            let sample = self.sample();
 
             for (ch, smp_out) in channel_samples.into_iter().enumerate() {
                 *smp_out = sample[ch] * util::db_to_gain_fast(gain);
