@@ -44,6 +44,8 @@ jobs:
             vst_dir: Contents/x86_64-mac/
             vst_ext: vst3
             xtask: bundle-universal
+        exclude:
+          - os: macos-latest # pxtone-sys doesn't work on mac yet
             
     runs-on: ${{ matrix.os }}
     needs: build
@@ -56,115 +58,20 @@ jobs:
     - name: Bundle
       run: cargo xtask ${{ matrix.xtask }} pxtone-plug --release
       
-    - name: Upload a Build Artifact
+#     - name: Upload a Build Artifact
+#       uses: actions/upload-artifact@v3
+#       with:
+#         name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}"
+#         path: target/bundled/
+        
+    - name: Upload CLAP
       uses: actions/upload-artifact@v3
       with:
-        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}"
-        path: target/bundled/
+        name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.clap"
+        path: target/bundled/*.clap
         
-#     - name: Upload CLAP
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.clap"
-#         path: target/bundled/*.clap
-        
-#     - name: Upload VST3
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.vst3"
-#         path: "target/bundled/${{ matrix.vst_dir }}*.${{ matrix.vst_ext }}"
-    
-  
-#   bundle-linux:
-#     runs-on: ubuntu-latest
-#     needs: build
-    
-#     steps:
-#     - uses: actions/checkout@v3
-#     - uses: benjlevesque/short-sha@v2.1
-#       id: short-sha
-#     - uses: Swatinem/rust-cache@v2.2.1
-      
-#     - name: Bundle
-#       run: cargo xtask bundle pxtone-plug --release
-      
-# #     - name: Upload a Build Artifact
-# #       uses: actions/upload-artifact@v3
-# #       with:
-# #         name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}"
-# #         path: target/bundled/
-        
-#     - name: Upload CLAP
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.clap"
-#         path: target/bundled/*.clap
-        
-#     - name: Upload VST3
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.vst3"
-#         path: target/bundled/Contents/x86_64-win/*.vst3
-  
-#   bundle-windows:
-#     runs-on: windows-latest
-#     needs: build
-    
-#     steps:
-#     - uses: actions/checkout@v3
-#     - uses: benjlevesque/short-sha@v2.1
-#       id: short-sha
-#     - uses: Swatinem/rust-cache@v2.2.1
-      
-#     - name: Bundle
-#       run: cargo xtask bundle pxtone-plug --release
-      
-# #     - name: Upload a Build Artifact
-# #       uses: actions/upload-artifact@v3
-# #       with:
-# #         name: "pxtone-plug-win-${{ steps.short-sha.outputs.sha }}"
-# #         path: target/bundled/
-        
-#     - name: Upload CLAP
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-win64-${{ steps.short-sha.outputs.sha }}.clap"
-#         path: target/bundled/*.clap
-        
-#     - name: Upload VST3
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-win64-${{ steps.short-sha.outputs.sha }}.vst3"
-#         path: target/bundled/Contents/x86_64-win/*.vst3
-  
-#   bundle-macos:
-#     runs-on: macos-latest
-#     needs: build
-    
-#     steps:
-#     - uses: actions/checkout@v3
-#     - uses: benjlevesque/short-sha@v2.1
-#       id: short-sha
-#     - uses: Swatinem/rust-cache@v2.2.1
-      
-#     - name: Bundle
-#       run: cargo xtask bundle pxtone-plug --release
-      
-# #     - name: Upload a Build Artifact
-# #       uses: actions/upload-artifact@v3
-# #       with:
-# #         name: "pxtone-plug-win-${{ steps.short-sha.outputs.sha }}"
-# #         path: target/bundled/
-        
-#     - name: Upload CLAP
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-win64-${{ steps.short-sha.outputs.sha }}.clap"
-#         path: target/bundled/*.clap
-        
-#     - name: Upload VST3
-#       uses: actions/upload-artifact@v3
-#       with:
-#         name: "pxtone-plug-win64-${{ steps.short-sha.outputs.sha }}.vst3"
-#         path: target/bundled/Contents/x86_64-win/*.vst3
-        
+    - name: Upload VST3
+      uses: actions/upload-artifact@v3
+      with:
+        name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.${{ matrix.vst_ext }}"
+        path: 'target/bundled/${{ matrix.vst_dir }}*.${{ matrix.vst_ext }}'
