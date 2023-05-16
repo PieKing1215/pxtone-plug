@@ -259,7 +259,7 @@ impl PtPlug {
                     work += tone.time_pan_buf[ch][index as usize];
                 }
 
-                out[ch] += ((work - 0x7ffe) as f32 /  (0x7fff - -0x7fff) as f32).clamp(-1.0, 1.0);
+                out[ch] += (work as f32 / 0x7fff as f32).clamp(-1.0, 1.0);
             }
 
             self.time_pan_index = (self.time_pan_index + 1) & (pxtone_sys::pxtnBUFSIZE_TIMEPAN as usize - 1);
