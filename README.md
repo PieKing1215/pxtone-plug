@@ -12,7 +12,7 @@ A **work in progress** VST®3 and CLAP instrument plugin for playing pxtone woic
 - ptNoise support
 - Support for more MIDI events
 
-Feel free to suggest more
+[Feel free to suggest more!](https://github.com/PieKing1215/pxtone-plug/issues/new?assignees=&labels=enhancement&projects=&template=feature_request.md&title=)
 
 ## Installing
 
@@ -31,7 +31,7 @@ If you need to run pxtone Plug as a VST2, you must use something like [Element](
 3. Run `cargo xtask bundle pxtone-plug --release`
 
 If it succeeds, there should be a .clap and a .vst3 somewhere in the `target/bundled/` folder.<br>
-If not, or if it fails, please [open an issue](https://github.com/PieKing1215/pxtone-plug/issues).
+If not, or if it fails, please [open an issue](https://github.com/PieKing1215/pxtone-plug/issues/new?assignees=&labels=bug&projects=&template=bug_report.md&title=).
 
 ## Licensing & Attribution
 
