@@ -68,11 +68,11 @@ jobs:
     - name: Upload CLAP
       uses: actions/upload-artifact@v3
       with:
-        name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.clap"
-        path: target/bundled/*.clap
+        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.clap"
+        path: target/bundled/pxtone-plug.clap
         
     - name: Upload VST3
       uses: actions/upload-artifact@v3
       with:
-        name: "pxtone-plug-linux-${{ steps.short-sha.outputs.sha }}.${{ matrix.vst_ext }}"
-        path: 'target/bundled/${{ matrix.vst_dir }}*.${{ matrix.vst_ext }}'
+        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.${{ matrix.vst_ext }}"
+        path: "target/bundled/${{ matrix.vst_dir }}pxtone-plug.${{ matrix.vst_ext }}"
