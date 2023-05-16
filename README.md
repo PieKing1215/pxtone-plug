@@ -1,4 +1,7 @@
-# pxtone Plug
+<h1>pxtone Plug<br>
+  <a href="https://github.com/PieKing1215/pxtone-plug/actions/workflows/autobuild.yml"><img src="https://github.com/PieKing1215/pxtone-plug/actions/workflows/autobuild.yml/badge.svg" /></a>
+</h1>
+
 A **work in progress** VST®3 and CLAP instrument plugin for playing pxtone woices.
 
 <img src="https://github.com/PieKing1215/pxtone-plug/assets/13819558/469d9319-dfaa-4da1-bdcc-99c186ab4149" width=150 />
