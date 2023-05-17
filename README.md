@@ -15,6 +15,7 @@ A **work in progress** VST®3 and CLAP instrument plugin for playing pxtone woic
 - ptNoise support
 - Support for more MIDI events
 - Pretty GUI
+- Mac support ([gh-1](gh-1))
 
 [Feel free to suggest more!](https://github.com/PieKing1215/pxtone-plug/issues/new?assignees=&labels=enhancement&projects=&template=feature_request.md&title=)
 
