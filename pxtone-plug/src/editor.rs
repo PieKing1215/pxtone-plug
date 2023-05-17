@@ -64,6 +64,9 @@ pub(crate) fn create(
                 }),
             );
 
+            // debug
+            // Label::new(cx, Data::params.map(|p| p.num_tones.load(std::sync::atomic::Ordering::SeqCst)));
+
             Button::new(
                 cx,
                 move |_| {

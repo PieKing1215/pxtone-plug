@@ -18,6 +18,7 @@ use pxtone_sys::{
 use simplelog::{Config, WriteLogger};
 use std::ffi::CStr;
 use std::fs::File;
+use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, RwLock};
 
@@ -81,6 +82,8 @@ struct PtParams {
 
     #[id = "gain"]
     pub gain: FloatParam,
+
+    pub num_tones: AtomicUsize,
 }
 
 impl Default for PtPlug {
@@ -151,6 +154,7 @@ impl Default for PtParams {
                 .with_unit(" dB"),
             file_data: Arc::default(),
             woice_name: Arc::default(),
+            num_tones: AtomicUsize::new(0),
         }
     }
 }
@@ -365,7 +369,10 @@ impl PtPlug {
                 *time_pan_index =
                     (*time_pan_index + 1) & (pxtone_sys::pxtnBUFSIZE_TIMEPAN as usize - 1);
 
-                tones.retain(|t| t.voice_tones.iter().any(|vt| vt.life_count > 0));
+                #[allow(clippy::used_underscore_binding)]
+                tones.retain(|t| {
+                    (0..pxtn_woice._voice_num).any(|v| t.voice_tones[v as usize].life_count > 0)
+                });
 
                 out.map(|f| f as _)
             } else {
@@ -515,6 +522,8 @@ impl Plugin for PtPlug {
             if let WoiceState::Loaded { pxtn_woice, pxtn_time_pan, pxtn_vol_pan, tones, .. } =
                 &mut self.woice_state
             {
+                self.params.num_tones.set(tones.len());
+
                 // Act on the next MIDI event
                 while let Some(event) = next_event {
                     if event.timing() > sample_id as u32 {
