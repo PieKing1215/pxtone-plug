@@ -22,7 +22,7 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, RwLock};
 
-struct PtPlug {
+pub struct PtPlug {
     params: Arc<PtParams>,
     sample_rate: Option<f32>,
 

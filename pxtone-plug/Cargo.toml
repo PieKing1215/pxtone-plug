@@ -8,9 +8,10 @@ repository = "https://github.com/PieKing1215/pxtone-plug"
 readme = "README.md"
 keywords = ["pxtone", "VST", "VST3", "CLAP"]
 categories = ["multimedia::audio"]
+default-run = "pxtone-plug"
 
 [dependencies]
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug", rev = "727b15a" }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug", rev = "727b15a", features = ["standalone"]}
 nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug", rev = "727b15a" }
 pxtone-sys = { git = "https://github.com/PieKing1215/rust-pxtone-sys" }
 log = "0.4"
@@ -19,4 +20,4 @@ rfd = "0.11"
 serde = { version = "1.0", features = ["rc"] }
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
