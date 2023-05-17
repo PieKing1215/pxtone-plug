@@ -20,7 +20,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2.2.1
     
     - name: Install libs
-      run: sudo apt install -y freeglut3-dev libxcursor-dev libgtk-3-dev libxcb-icccm4-dev libx11-xcb-dev libxcb-dri2-0-dev libasound2-dev
+      run: sudo apt install -y freeglut3-dev libxcursor-dev libgtk-3-dev libxcb-icccm4-dev libx11-xcb-dev libxcb-dri2-0-dev libasound2-dev libjack-dev
     
     - name: Build
       run: cargo build --verbose
@@ -63,7 +63,7 @@ jobs:
       
     - name: Install libs
       if: matrix.name == 'linux'
-      run: sudo apt install -y freeglut3-dev libxcursor-dev libgtk-3-dev libxcb-icccm4-dev libx11-xcb-dev libxcb-dri2-0-dev libasound2
+      run: sudo apt install -y freeglut3-dev libxcursor-dev libgtk-3-dev libxcb-icccm4-dev libx11-xcb-dev libxcb-dri2-0-dev libasound2-dev libjack-dev
       
     - name: Bundle
       run: cargo xtask ${{ matrix.xtask }} pxtone-plug --release
