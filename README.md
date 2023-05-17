@@ -7,9 +7,9 @@ A **work in progress** VST®3 and CLAP instrument plugin for playing pxtone woic
 <img src="https://github.com/PieKing1215/pxtone-plug/assets/13819558/469d9319-dfaa-4da1-bdcc-99c186ab4149" width=150 />
 
 ### Current Features
-- ptVoice support (temporarily hard coded file)
-- Note On/Off events
-- Velocity
+- Load ptVoice from file
+- Loaded woice persists across host restarts
+- Note On/Off events + velocity
 
 ### Planned Features
 - ptNoise support
@@ -31,8 +31,10 @@ If you need to run pxtone Plug as a VST2, you must use something like [Element](
 ## Building
 
 1. Install [Rust](https://www.rust-lang.org/learn/get-started)
-2. Clone this repo
-3. Run `cargo xtask bundle pxtone-plug --release`
+2. On Linux, you may need to install some extra system libraries.<br>
+   GitHub Actions needed `sudo apt install -y freeglut3-dev libxcursor-dev libgtk-3-dev libxcb-icccm4-dev libx11-xcb-dev libxcb-dri2-0-dev`
+4. Clone this repo
+5. Run `cargo xtask bundle pxtone-plug --release`
 
 If it succeeds, there should be a .clap and a .vst3 somewhere in the `target/bundled/` folder.<br>
 If not, or if it fails, please [open an issue](https://github.com/PieKing1215/pxtone-plug/issues/new?assignees=&labels=bug&projects=&template=bug_report.md&title=).
