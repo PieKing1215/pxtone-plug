@@ -183,7 +183,10 @@ pub(crate) fn create(
                 .height(Units::Pixels(24.0));
 
             // debug
-            // Label::new(cx, Data::params.map(|p| p.num_tones.load(std::sync::atomic::Ordering::SeqCst)));
+            Label::new(
+                cx,
+                Data::params.map(|p| p.num_tones.load(std::sync::atomic::Ordering::SeqCst)),
+            );
 
             HStack::new(cx, |cx| {
                 // TODO: this clone is avoidable
