@@ -14,7 +14,6 @@ use nih_plug_vizia::{
         resource::ImageRetentionPolicy,
         views::{Button, Label, VStack},
     },
-    widgets::ResizeHandle,
     ViziaState, ViziaTheming,
 };
 use rfd::FileDialog;
@@ -49,54 +48,66 @@ pub(crate) fn create(
                 color: #D2CA9C;
             }
 
-            .pxButton {
+            .button {
+                background-color: transparent;
+                border-width: 0px;
+                border-radius: 0px;
+            }
+
+            .selectButton {
+                width: 18px;
+                height: 18px;
+                background-image: url("select_btn_18x18.png");
+            }
+
+            .button:hover {
+                background-color: transparent;
+                border-width: 0px;
+                border-radius: 0px;
+            }
+
+            .selectButton label {
+                color: #FFFF80;
+            }
+
+            .selectButton:active label {
+                color: #FFFF80;
+            }
+
+            .textField {
                 width: 200px;
-                height: 20px;
+                height: 18px;
 
                 background-color: transparent;
                 border-width: 0px;
                 border-radius: 0px;
-                outer-shadow: none;
 
-                background-image: url("button_200x20.png");
+                background-image: url("text_field_200x18.png");
+                color: #00F080;
             }
 
-            .pxButton:hover {
-                background-color: transparent;
-                border-width: 0px;
-                border-radius: 0px;
-                outer-shadow: none;
-            }
-
-            .pxButton label {
-                color: #FFFF80;
-            }
-
-            .pxButton:active label {
-                color: #FFFF80;
-            }
-
-            .z-stack {
-                width: 100%;
-                height: 100%;
+            .textField label {
+                left: 4px;
+                font-size: 14;
             }
         "#,
         )
         .unwrap();
 
         cx.set_image_loader(|cx, path| {
-            if path == "button_200x20.png" {
+            let mut load = |buf| {
                 cx.load_image(
                     path.to_owned(),
-                    image::load_from_memory_with_format(
-                        include_bytes!("../res/button_200x20.png"),
-                        image::ImageFormat::Png,
-                    )
-                    .unwrap(),
+                    image::load_from_memory_with_format(buf, image::ImageFormat::Png).unwrap(),
                     ImageRetentionPolicy::Forever,
                 );
-            } else {
-                panic!();
+            };
+
+            match path {
+                "button_200x20.png" => load(include_bytes!("../res/button_200x20.png")),
+                "select_btn_18x18.png" => load(include_bytes!("../res/select_btn_18x18.png")),
+                "text_field_200x18.png" => load(include_bytes!("../res/text_field_200x18.png")),
+                _ => panic!(),
             }
         });
 
@@ -117,83 +128,87 @@ pub(crate) fn create(
         let logger = logger.clone();
         let sender = sender.clone();
 
-        VStack::new(cx, move |cx| {
-            Label::new(cx, "pxtone Plug").height(Units::Pixels(20.0));
+        let select = move || {
+            // need to clone since this is a `Fn`, not `FnOnce`
+            let logger = logger.clone();
+            let sender = sender.clone();
 
-            // TODO: this clone is avoidable
-            Label::new(
-                cx,
-                Data::params.map(|p| {
-                    p.woice_name
-                        .read()
-                        .unwrap()
-                        .as_ref()
-                        .cloned()
-                        .unwrap_or("None".into())
-                }),
-            )
-            .height(Units::Pixels(20.0));
+            thread::spawn(move || {
+                let path = FileDialog::new()
+                    .add_filter("ptVoice", &["ptvoice"])
+                    .set_directory("/")
+                    .pick_file();
+
+                if let Some(logger) = &logger {
+                    logger.log(
+                        &RecordBuilder::new()
+                            .args(format_args!("select {path:?}"))
+                            .build(),
+                    );
+                }
+
+                if let Some(path) = &path {
+                    match std::fs::read(path) {
+                        Ok(data) => {
+                            if let Err(e) = sender.send(FileSelectPayload {
+                                file_data: data,
+                                file_name: path.file_name().unwrap().to_string_lossy().to_string(),
+                            }) {
+                                if let Some(logger) = &logger {
+                                    logger.log(
+                                        &RecordBuilder::new()
+                                            .args(format_args!("File send failed: {e:?}"))
+                                            .build(),
+                                    );
+                                }
+                            };
+                        },
+                        Err(e) => {
+                            if let Some(logger) = &logger {
+                                logger.log(
+                                    &RecordBuilder::new()
+                                        .args(format_args!("File read failed: {e:?}"))
+                                        .build(),
+                                );
+                            }
+                        },
+                    }
+                }
+            });
+        };
+
+        VStack::new(cx, move |cx| {
+            Label::new(cx, "pxtone Plug")
+                .top(Units::Pixels(4.0))
+                .height(Units::Pixels(24.0));
 
             // debug
             // Label::new(cx, Data::params.map(|p| p.num_tones.load(std::sync::atomic::Ordering::SeqCst)));
 
-            Button::new(
-                cx,
-                move |_| {
-                    // need to clone since this is a `Fn`, not `FnOnce`
-                    let logger = logger.clone();
-                    let sender = sender.clone();
+            HStack::new(cx, |cx| {
+                // TODO: this clone is avoidable
 
-                    thread::spawn(move || {
-                        let path = FileDialog::new()
-                            .add_filter("ptVoice", &["ptvoice"])
-                            .set_directory("/")
-                            .pick_file();
+                ZStack::new(cx, |cx| {
+                    Label::new(
+                        cx,
+                        Data::params.map(|p| {
+                            p.woice_name
+                                .read()
+                                .unwrap()
+                                .as_ref()
+                                .cloned()
+                                .unwrap_or("None".into())
+                        }),
+                    );
+                })
+                .class("textField");
 
-                        if let Some(logger) = &logger {
-                            logger.log(
-                                &RecordBuilder::new()
-                                    .args(format_args!("select {path:?}"))
-                                    .build(),
-                            );
-                        }
-
-                        if let Some(path) = &path {
-                            match std::fs::read(path) {
-                                Ok(data) => {
-                                    if let Err(e) = sender.send(FileSelectPayload {
-                                        file_data: data,
-                                        file_name: path
-                                            .file_name()
-                                            .unwrap()
-                                            .to_string_lossy()
-                                            .to_string(),
-                                    }) {
-                                        if let Some(logger) = &logger {
-                                            logger.log(
-                                                &RecordBuilder::new()
-                                                    .args(format_args!("File send failed: {e:?}"))
-                                                    .build(),
-                                            );
-                                        }
-                                    };
-                                },
-                                Err(e) => {
-                                    if let Some(logger) = &logger {
-                                        logger.log(
-                                            &RecordBuilder::new()
-                                                .args(format_args!("File read failed: {e:?}"))
-                                                .build(),
-                                        );
-                                    }
-                                },
-                            }
-                        }
-                    });
-                },
-                |cx| Label::new(cx, "Select Woice").top(Units::Pixels(0.0)),
-            )
-            .class("pxButton");
+                Button::new(cx, move |_| select(), Element::new)
+                    .left(Units::Pixels(4.0))
+                    .class("button")
+                    .class("selectButton");
+            })
+            .width(Units::Pixels(220.0));
         })
         .child_left(Stretch(1.0))
         .child_right(Stretch(1.0))
