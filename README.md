@@ -27,7 +27,7 @@ Automated dev builds can be downloaded in [here](https://github.com/PieKing1215/
 ## Usage
 
 Use the `.vst3` file as a VST3 plugin or use the `.clap` file as a CLAP plugin.<br>
-If you need to run pxtone Plug as a VST2, you must use something like [Element](https://github.com/kushview/element) to bridge the gap.
+If you need to run pxtone Plug as a VST2, you must use something like [vst3shell](https://www.kvraudio.com/forum/viewtopic.php?t=565924) or [Element](https://github.com/kushview/element) to bridge the gap.
 
 ## Building
 
