@@ -4,7 +4,6 @@ use std::{
     thread,
 };
 
-use log::{Log, RecordBuilder};
 use nih_plug::prelude::Editor;
 use nih_plug_vizia::{
     assets, create_vizia_editor,
@@ -17,7 +16,6 @@ use nih_plug_vizia::{
     ViziaState, ViziaTheming,
 };
 use rfd::FileDialog;
-use simplelog::WriteLogger;
 
 use crate::{FileSelectPayload, PtParams};
 
@@ -36,11 +34,13 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 pub(crate) fn create(
     params: Arc<PtParams>,
     editor_state: Arc<ViziaState>,
-    logger: Option<Arc<WriteLogger<File>>>,
     sender: SyncSender<FileSelectPayload>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
+        log::info!("Creating vizia editor");
+
         assets::register_noto_sans_regular(cx);
+        assets::register_noto_sans_light(cx);
         cx.add_stylesheet(
             r#"
             #root {
@@ -125,12 +125,10 @@ pub(crate) fn create(
         // ResizeHandle::new(cx);
 
         // need to clone since this is a `Fn`, not `FnOnce`
-        let logger = logger.clone();
         let sender = sender.clone();
 
         let select = move || {
             // need to clone since this is a `Fn`, not `FnOnce`
-            let logger = logger.clone();
             let sender = sender.clone();
 
             thread::spawn(move || {
@@ -139,13 +137,7 @@ pub(crate) fn create(
                     .set_directory("/")
                     .pick_file();
 
-                if let Some(logger) = &logger {
-                    logger.log(
-                        &RecordBuilder::new()
-                            .args(format_args!("select {path:?}"))
-                            .build(),
-                    );
-                }
+                log::info!("Select {path:?}");
 
                 if let Some(path) = &path {
                     match std::fs::read(path) {
@@ -154,23 +146,11 @@ pub(crate) fn create(
                                 file_data: data,
                                 file_name: path.file_name().unwrap().to_string_lossy().to_string(),
                             }) {
-                                if let Some(logger) = &logger {
-                                    logger.log(
-                                        &RecordBuilder::new()
-                                            .args(format_args!("File send failed: {e:?}"))
-                                            .build(),
-                                    );
-                                }
+                                log::error!("File send failed: {e:?}");
                             };
                         },
                         Err(e) => {
-                            if let Some(logger) = &logger {
-                                logger.log(
-                                    &RecordBuilder::new()
-                                        .args(format_args!("File read failed: {e:?}"))
-                                        .build(),
-                                );
-                            }
+                            log::error!("File read failed: {e:?}");
                         },
                     }
                 }
@@ -216,5 +196,7 @@ pub(crate) fn create(
         .child_left(Stretch(1.0))
         .child_right(Stretch(1.0))
         .id("root");
+
+        log::info!("Vizia done");
     })
 }

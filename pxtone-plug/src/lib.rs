@@ -10,12 +10,9 @@
 mod editor;
 pub mod synth;
 
-use log::{LevelFilter, Log, RecordBuilder};
 use nih_plug::params::persist::PersistentField;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
-use simplelog::{Config, WriteLogger};
-use std::fs::File;
 use std::sync::atomic::AtomicUsize;
 use std::sync::mpsc::{Receiver, SyncSender};
 use std::sync::{Arc, RwLock};
@@ -24,8 +21,6 @@ use synth::PxtoneSynth;
 pub struct PtPlug {
     params: Arc<PtParams>,
     initted: bool,
-
-    logger: Option<Arc<WriteLogger<File>>>,
 
     file_select_recv: Receiver<FileSelectPayload>,
     file_select_send: SyncSender<FileSelectPayload>,
@@ -60,28 +55,11 @@ pub struct PtParams {
 
 impl Default for PtPlug {
     fn default() -> Self {
-        let mut log_file = None;
-        log_file = log_file.or_else(|| File::create("pxtone-plug.log").ok());
-
-        let logger = log_file.map(|f| WriteLogger::new(LevelFilter::Info, Config::default(), f));
-
-        if let Some(logger) = &logger {
-            logger.log(
-                &RecordBuilder::new()
-                    .args(format_args!("LOG STARTED"))
-                    .build(),
-            );
-        }
+        log::info!("Log Started");
 
         let synth = PxtoneSynth::new().unwrap();
 
-        if let Some(logger) = &logger {
-            logger.log(
-                &RecordBuilder::new()
-                    .args(format_args!("serv.init OK"))
-                    .build(),
-            );
-        }
+        log::info!("serv.init OK");
 
         let (send, recv) = std::sync::mpsc::sync_channel(1);
 
@@ -90,8 +68,6 @@ impl Default for PtPlug {
             initted: false,
 
             synth,
-
-            logger: logger.map(|bl| Arc::new(*bl)),
 
             file_select_recv: recv,
             file_select_send: send,
@@ -116,6 +92,8 @@ impl Default for PtParams {
 
 impl PtPlug {
     fn load_file(&mut self, file: FileSelectPayload) {
+        log::info!("Loading file");
+
         self.load_file_data(&file.file_data);
 
         self.params.file_data.set(Some(file.file_data));
@@ -129,13 +107,7 @@ impl PtPlug {
     fn load_file_data(&mut self, file_data: &[u8]) {
         self.synth.load_woice(file_data).unwrap();
 
-        if let Some(logger) = &self.logger {
-            logger.log(
-                &RecordBuilder::new()
-                    .args(format_args!("woice.PTV_Read OK"))
-                    .build(),
-            );
-        }
+        log::info!("woice.PTV_Read OK");
     }
 
     fn init_woice(&mut self) {
@@ -163,7 +135,7 @@ impl Plugin for PtPlug {
         },
     ];
 
-    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type SysExMessage = ();
@@ -174,12 +146,18 @@ impl Plugin for PtPlug {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(
+        log::info!("Creating editor...");
+        let editor = editor::create(
             self.params.clone(),
             self.params.editor_state.clone(),
-            self.logger.clone(),
             self.file_select_send.clone(),
-        )
+        );
+        if editor.is_some() {
+            log::info!("Created editor");
+        } else {
+            log::error!("Failed to create editor");
+        }
+        editor
     }
 
     fn initialize(
@@ -188,6 +166,8 @@ impl Plugin for PtPlug {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
+        log::info!("Initializing...");
+
         self.initted = true;
         self.synth
             .set_audio_format(2, buffer_config.sample_rate)
@@ -205,20 +185,24 @@ impl Plugin for PtPlug {
 
         self.init_woice();
 
+        log::info!("Initialized");
+
         true
     }
 
     fn reset(&mut self) {
+        log::info!("Reset");
         self.synth.stop_all();
     }
 
-    #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
     fn process(
         &mut self,
         buffer: &mut Buffer,
         aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        log::debug!("process {}", self.initted);
+
         if !self.initted {
             return ProcessStatus::KeepAlive;
         }

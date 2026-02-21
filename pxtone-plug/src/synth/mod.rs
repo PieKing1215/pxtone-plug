@@ -1,3 +1,8 @@
+//! This file contains some code ported from ptCollage ([zlib license](https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/LICENSE))
+//! Mainly [pxtonewinXA2_voice.cpp](https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp)
+//! 
+//! I've added comments
+
 use std::{ffi::CStr, sync::Arc};
 
 use nih_plug::{
@@ -37,6 +42,7 @@ enum WoiceState {
     },
 }
 
+/// Roughly based on [`STREAMINGVOICETONE2`](https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2.h#L12-L29)
 struct Tone {
     on: bool,
     note_id: u8,
@@ -77,7 +83,7 @@ impl PxtoneSynth {
         let woice = unsafe {
             let mut descriptor = pxtnDescriptor::new();
 
-            println!("Loading {} bytes", file_data.len());
+            log::info!("Loading {} bytes", file_data.len());
             descriptor.set_memory_r(file_data as *const _ as *mut _, file_data.len() as i32);
 
             let mut woice = pxtnWoice::new();
@@ -135,8 +141,6 @@ impl PxtoneSynth {
 
     #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
     pub fn sample(&mut self) -> [f32; 2] {
-        // ported from some original pxtone code not included in pxtone-sys
-
         let Some(sample_rate) = self.sample_rate else {
             return [0.0; 2]
         };
@@ -159,6 +163,7 @@ impl PxtoneSynth {
                 for tone in &mut *tones {
                     #[allow(clippy::used_underscore_binding)]
                     for v in 0..pxtn_woice._voice_num as usize {
+                        // Ported from: https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp#L51C1-L76C2
                         unsafe fn update_env(
                             vi: &mut pxtone_sys::pxtnVOICEINSTANCE,
                             vt: &mut pxtnVOICETONE,
@@ -197,6 +202,8 @@ impl PxtoneSynth {
                         update_env(vi, vt, tone.on);
                     }
                 }
+
+                // Ported from: https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp#L144-L228
 
                 // sample into time pan buffer
                 #[allow(clippy::needless_range_loop)]
@@ -379,9 +386,12 @@ impl PxtoneSynth {
             // Act on the next MIDI event
             let mut next_event = context.next_event();
             while let Some(event) = next_event {
-                if event.timing() > sample_id as u32 {
-                    break;
-                }
+                log::debug!("{event:?} @ {sample_id}");
+
+                // not sure why I had this, sample_id appears to always be 0 (?)
+                // if event.timing() > sample_id as u32 {
+                //     break;
+                // }
 
                 match event {
                     NoteEvent::NoteOn { note, velocity, .. } => {
@@ -408,6 +418,8 @@ impl PxtoneSynth {
                             time_pan_buf: [[0; pxtone_sys::pxtnBUFSIZE_TIMEPAN as _];
                                 pxtone_sys::pxtnMAX_CHANNEL as _],
                         };
+                        
+                        // Ported from: https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp#L272-L334
 
                         unsafe {
                             pxtn_vol_pan[0] = 64;

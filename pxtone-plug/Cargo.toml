@@ -11,14 +11,13 @@ categories = ["multimedia::audio"]
 default-run = "pxtone-plug"
 
 [dependencies]
-nih_plug = { git = "https://github.com/PieKing1215/nih-plug.git", branch = "vizia-main", features = ["standalone"]}
-nih_plug_vizia = { git = "https://github.com/PieKing1215/nih-plug.git", branch = "vizia-main" }
-pxtone-sys = { git = "https://github.com/PieKing1215/rust-pxtone-sys" }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug", rev = "28b149ec4d62757d0b448809148a0c3ca6e09a95", features = ["standalone"]}
+nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug", rev = "28b149ec4d62757d0b448809148a0c3ca6e09a95" }
+pxtone-sys = { git = "https://github.com/PieKing1215/rust-pxtone-sys", rev = "9542ca3fa3f98c5b48b6adcff2f0b67204bfae47" }
 log = "0.4"
-simplelog = { version = "0.12", default-features = false, features = ["local-offset"] }
-rfd = "0.11"
+rfd = "0.17"
 serde = { version = "1.0", features = ["rc"] }
-time = "0.3.36"
+time = "0.3.45"
 
 [lib]
 crate-type = ["cdylib", "lib"]
