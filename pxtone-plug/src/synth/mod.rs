@@ -1,6 +1,6 @@
 //! This file contains some code ported from ptCollage ([zlib license](https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/LICENSE))
 //! Mainly [pxtonewinXA2_voice.cpp](https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp)
-//! 
+//!
 //! I've added comments
 
 use std::{ffi::CStr, sync::Arc};
@@ -89,7 +89,7 @@ impl PxtoneSynth {
             let mut woice = pxtnWoice::new();
             woice.Voice_Allocate(pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _);
 
-            match woice.PTV_Read(&mut descriptor) {
+            match woice.PTV_Read(&raw mut descriptor) {
                 0 => {},
                 n => Err(format!(
                     "PTV_Read {}",
@@ -142,7 +142,7 @@ impl PxtoneSynth {
     #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
     pub fn sample(&mut self) -> [f32; 2] {
         let Some(sample_rate) = self.sample_rate else {
-            return [0.0; 2]
+            return [0.0; 2];
         };
 
         let dst_ch: usize = 2;
@@ -314,7 +314,7 @@ impl PxtoneSynth {
 
     pub fn tone_ready(&mut self) -> Result<(), String> {
         let Some(sample_rate) = self.sample_rate else {
-            return Err("No sample rate".into())
+            return Err("No sample rate".into());
         };
 
         unsafe {
@@ -418,7 +418,7 @@ impl PxtoneSynth {
                             time_pan_buf: [[0; pxtone_sys::pxtnBUFSIZE_TIMEPAN as _];
                                 pxtone_sys::pxtnMAX_CHANNEL as _],
                         };
-                        
+
                         // Ported from: https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp#L272-L334
 
                         unsafe {
@@ -514,6 +514,6 @@ impl PxtoneSynth {
 
                 next_event = context.next_event();
             }
-        };
+        }
     }
 }

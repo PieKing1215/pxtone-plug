@@ -1,5 +1,4 @@
 use std::{
-    fs::File,
     sync::{mpsc::SyncSender, Arc},
     thread,
 };
@@ -147,7 +146,7 @@ pub(crate) fn create(
                                 file_name: path.file_name().unwrap().to_string_lossy().to_string(),
                             }) {
                                 log::error!("File send failed: {e:?}");
-                            };
+                            }
                         },
                         Err(e) => {
                             log::error!("File read failed: {e:?}");
