@@ -92,7 +92,10 @@ impl PxtoneSynth {
             let mut descriptor = pxtnDescriptor::new();
 
             log::info!("Loading {} bytes", file_data.len());
-            descriptor.set_memory_r(file_data as *const _ as *mut _, file_data.len() as i32);
+            descriptor.set_memory_r(
+                std::ptr::from_ref(file_data) as *mut _,
+                file_data.len() as i32,
+            );
 
             let mut woice = pxtnWoice::new();
             woice.Voice_Allocate(pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _);
@@ -115,7 +118,7 @@ impl PxtoneSynth {
 
             time_pan_index: 0,
 
-            channels: Default::default(),
+            channels: HashMap::default(),
         };
 
         Ok(())

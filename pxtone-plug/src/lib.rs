@@ -6,6 +6,7 @@
 #![allow(clippy::cast_lossless)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::missing_errors_doc)]
+#![allow(clippy::expl_impl_clone_on_copy)]
 
 mod editor;
 pub mod synth;
