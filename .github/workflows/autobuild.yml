@@ -63,20 +63,8 @@ jobs:
     - name: Bundle
       run: cargo xtask ${{ matrix.xtask }} pxtone-plug --release
       
-#     - name: Upload a Build Artifact
-#       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-#       with:
-#         name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}"
-#         path: target/bundled/
-        
-    - name: Upload CLAP
+    - name: Upload a Build Artifact
       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.clap"
-        path: target/bundled/pxtone-plug.clap
-        
-    - name: Upload VST3
-      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-      with:
-        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.vst3"
-        path: "target/bundled/pxtone-plug.vst3"
+        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}"
+        path: target/bundled/
