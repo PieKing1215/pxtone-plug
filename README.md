@@ -22,7 +22,7 @@ A **work in progress** VST®3 and CLAP instrument plugin for playing pxtone woic
 ## Installing
 
 There are no stable releases right now.<br/>
-Automated dev builds can be downloaded in [here](https://github.com/PieKing1215/pxtone-plug/actions/workflows/autobuild.yml?query=branch%3Amaster) after signing in to GitHub.
+Automated dev builds can be downloaded in [here](https://github.com/PieKing1215/pxtone-plug/actions/workflows/autobuild.yml?query=branch%3Amain) after signing in to GitHub.
 
 ## Usage
 
