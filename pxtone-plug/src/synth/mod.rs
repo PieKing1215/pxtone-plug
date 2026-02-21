@@ -374,10 +374,16 @@ impl PxtoneSynth {
         context: &mut impl ProcessContext<PtPlug>,
         params: &Arc<PtParams>,
     ) {
+        let mut next_event = context.next_event();
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
             let gain = params.gain.smoothed.next();
 
-            self.handle_events(context, sample_id, params);
+            while let Some(event) = next_event.take_if(|e| e.timing() <= sample_id as u32) {
+                log::debug!("handle_event @ {sample_id}: {event:?}");
+                self.handle_event(event, params);
+
+                next_event = context.next_event();
+            }
 
             let sample = self.sample();
 
@@ -388,12 +394,7 @@ impl PxtoneSynth {
     }
 
     #[allow(clippy::too_many_lines)] // TODO: split into smaller fns
-    fn handle_events(
-        &mut self,
-        context: &mut impl ProcessContext<PtPlug>,
-        sample_id: usize,
-        params: &Arc<PtParams>,
-    ) {
+    fn handle_event(&mut self, event: NoteEvent<()>, params: &Arc<PtParams>) {
         let Some(sample_rate) = self.sample_rate else {
             return;
         };
@@ -409,194 +410,185 @@ impl PxtoneSynth {
                 .set(channels.values().map(|c| c.tones.len()).sum());
 
             // Act on the next MIDI event
-            let mut next_event = context.next_event();
-            while let Some(event) = next_event {
-                log::info!("{event:?} @ {sample_id}");
+            match event {
+                NoteEvent::NoteOn { note, velocity, channel, .. } => {
+                    self.master_gain.set_target(sample_rate, velocity);
 
-                // not sure why I had this, sample_id appears to always be 0 (?)
-                // if event.timing() > sample_id as u32 {
-                //     break;
-                // }
-
-                match event {
-                    NoteEvent::NoteOn { note, velocity, channel, .. } => {
-                        self.master_gain.set_target(sample_rate, velocity);
-
-                        let mut tone = Tone {
-                            on: true,
-                            note_id: note,
-                            note_freq: util::midi_note_to_freq(note),
-                            tuning_semitones: 0.0,
-                            velocity: (velocity * 127.0) as _,
-                            voice_tones: [pxtnVOICETONE {
-                                smp_pos: 0.0,
-                                offset_freq: 1.0,
-                                env_volume: 128,
-                                life_count: 1,
-                                on_count: 0,
-                                smp_count: 0,
-                                env_start: 0,
-                                env_pos: 0,
-                                env_release_clock: 0,
-                                smooth_volume: 0,
-                            };
-                                pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _],
-                            time_pan_buf: [[0; pxtone_sys::pxtnBUFSIZE_TIMEPAN as _];
-                                pxtone_sys::pxtnMAX_CHANNEL as _],
+                    let mut tone = Tone {
+                        on: true,
+                        note_id: note,
+                        note_freq: util::midi_note_to_freq(note),
+                        tuning_semitones: 0.0,
+                        velocity: (velocity * 127.0) as _,
+                        voice_tones: [pxtnVOICETONE {
+                            smp_pos: 0.0,
+                            offset_freq: 1.0,
+                            env_volume: 128,
+                            life_count: 1,
+                            on_count: 0,
+                            smp_count: 0,
+                            env_start: 0,
+                            env_pos: 0,
+                            env_release_clock: 0,
+                            smooth_volume: 0,
                         };
+                            pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _],
+                        time_pan_buf: [[0; pxtone_sys::pxtnBUFSIZE_TIMEPAN as _];
+                            pxtone_sys::pxtnMAX_CHANNEL as _],
+                    };
 
-                        // Ported from: https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp#L272-L334
+                    // Ported from: https://github.com/ewancg/ptCollage/blob/4a2889148215fa37bbe6ed0544304e6120fac6be/pxtonewin/pxtonewinXA2_voice.cpp#L272-L334
 
-                        unsafe {
-                            pxtn_vol_pan[0] = 64;
-                            pxtn_vol_pan[1] = 64;
-                            if dst_ch == 2 {
-                                let vol_pan = 64; // TODO
+                    unsafe {
+                        pxtn_vol_pan[0] = 64;
+                        pxtn_vol_pan[1] = 64;
+                        if dst_ch == 2 {
+                            let vol_pan = 64; // TODO
 
-                                if vol_pan >= 64 {
-                                    pxtn_vol_pan[0] = 128 - vol_pan;
-                                } else {
-                                    pxtn_vol_pan[1] = vol_pan;
+                            if vol_pan >= 64 {
+                                pxtn_vol_pan[0] = 128 - vol_pan;
+                            } else {
+                                pxtn_vol_pan[1] = vol_pan;
+                            }
+                        }
+
+                        pxtn_time_pan[0] = 0;
+                        pxtn_time_pan[1] = 0;
+                        if dst_ch == 2 {
+                            let time_pan = 64; // TODO
+
+                            if time_pan >= 64 {
+                                pxtn_time_pan[0] = time_pan - 64;
+                                if pxtn_time_pan[0] >= 64 {
+                                    pxtn_time_pan[0] = 63;
                                 }
+                                pxtn_time_pan[0] = pxtn_time_pan[0] * 44100 / sample_rate as i32;
+                            } else {
+                                pxtn_time_pan[1] = 64 - time_pan;
+                                if pxtn_time_pan[1] >= 64 {
+                                    pxtn_time_pan[1] = 63;
+                                }
+                                pxtn_time_pan[1] = pxtn_time_pan[1] * 44100 / sample_rate as i32;
+                            }
+                        }
+
+                        #[allow(clippy::used_underscore_binding)]
+                        for v in 0..pxtn_woice._voice_num as usize {
+                            let vi = &mut {
+                                std::slice::from_raw_parts_mut(
+                                    pxtn_woice._voinsts,
+                                    pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
+                                )
+                            }[v];
+                            let vt = &mut tone.voice_tones[v];
+                            let vu = &*pxtn_woice.get_voice(v as _);
+
+                            vt.life_count = 1;
+                            vt.smp_pos = 0.0;
+                            vt.smp_count = 0;
+                            vt.env_pos = 0;
+
+                            if vu.voice_flags & pxtone_sys::PTV_VOICEFLAG_BEATFIT == 0 {
+                                vt.offset_freq = self
+                                    .pxtn_freq
+                                    .Get(pxtone_sys::EVENTDEFAULT_BASICKEY as i32 - vu.basic_key)
+                                    * vu.tuning;
                             }
 
-                            pxtn_time_pan[0] = 0;
-                            pxtn_time_pan[1] = 0;
-                            if dst_ch == 2 {
-                                let time_pan = 64; // TODO
-
-                                if time_pan >= 64 {
-                                    pxtn_time_pan[0] = time_pan - 64;
-                                    if pxtn_time_pan[0] >= 64 {
-                                        pxtn_time_pan[0] = 63;
-                                    }
-                                    pxtn_time_pan[0] =
-                                        pxtn_time_pan[0] * 44100 / sample_rate as i32;
-                                } else {
-                                    pxtn_time_pan[1] = 64 - time_pan;
-                                    if pxtn_time_pan[1] >= 64 {
-                                        pxtn_time_pan[1] = 63;
-                                    }
-                                    pxtn_time_pan[1] =
-                                        pxtn_time_pan[1] * 44100 / sample_rate as i32;
-                                }
+                            if vi.env_size > 0 {
+                                vt.env_volume = 0;
+                                vt.env_start = 0;
+                            } else {
+                                vt.env_volume = 128;
+                                vt.env_start = 128;
                             }
+                        }
+                    }
 
+                    channels.entry(channel).or_default().tones.push(tone);
+                },
+                NoteEvent::NoteOff { note, channel, .. } => {
+                    self.master_gain.set_target(sample_rate, 0.0);
+
+                    if let Some(channel) = channels.get_mut(&channel) {
+                        if let Some(tone) =
+                            channel.tones.iter_mut().find(|t| t.on && t.note_id == note)
+                        {
+                            tone.on = false;
                             #[allow(clippy::used_underscore_binding)]
                             for v in 0..pxtn_woice._voice_num as usize {
-                                let vi = &mut {
-                                    std::slice::from_raw_parts_mut(
-                                        pxtn_woice._voinsts,
-                                        pxtone_sys::pxtnMAX_UNITCONTROLVOICE as _,
-                                    )
-                                }[v];
                                 let vt = &mut tone.voice_tones[v];
-                                let vu = &*pxtn_woice.get_voice(v as _);
-
-                                vt.life_count = 1;
-                                vt.smp_pos = 0.0;
-                                vt.smp_count = 0;
+                                vt.env_start = vt.env_volume;
                                 vt.env_pos = 0;
-
-                                if vu.voice_flags & pxtone_sys::PTV_VOICEFLAG_BEATFIT == 0 {
-                                    vt.offset_freq = self.pxtn_freq.Get(
-                                        pxtone_sys::EVENTDEFAULT_BASICKEY as i32 - vu.basic_key,
-                                    ) * vu.tuning;
-                                }
-
-                                if vi.env_size > 0 {
-                                    vt.env_volume = 0;
-                                    vt.env_start = 0;
-                                } else {
-                                    vt.env_volume = 128;
-                                    vt.env_start = 128;
-                                }
                             }
                         }
-
-                        channels.entry(channel).or_default().tones.push(tone);
-                    },
-                    NoteEvent::NoteOff { note, channel, .. } => {
-                        self.master_gain.set_target(sample_rate, 0.0);
-
-                        if let Some(channel) = channels.get_mut(&channel) {
-                            if let Some(tone) =
-                                channel.tones.iter_mut().find(|t| t.on && t.note_id == note)
-                            {
-                                tone.on = false;
-                                #[allow(clippy::used_underscore_binding)]
-                                for v in 0..pxtn_woice._voice_num as usize {
-                                    let vt = &mut tone.voice_tones[v];
-                                    vt.env_start = vt.env_volume;
-                                    vt.env_pos = 0;
-                                }
+                    } else {
+                        log::warn!("Got NoteOff event for non-existant channel: {channel}");
+                    }
+                },
+                NoteEvent::Choke { note, channel, .. } => {
+                    if let Some(channel) = channels.get_mut(&channel) {
+                        channel.tones.retain(|t| t.note_id != note);
+                    } else {
+                        log::warn!("Got Choke event for non-existant channel: {channel}");
+                    }
+                },
+                NoteEvent::PolyPressure { note: _, pressure, .. } => {
+                    self.master_gain.set_target(sample_rate, pressure);
+                },
+                NoteEvent::PolyTuning { channel, note, tuning, .. } => {
+                    if let Some(channel) = channels.get_mut(&channel) {
+                        if let Some(tone) =
+                            channel.tones.iter_mut().find(|t| t.on && t.note_id == note)
+                        {
+                            tone.tuning_semitones = tuning;
+                        }
+                    } else {
+                        log::warn!("Got PolyTuning event for non-existant channel: {channel}");
+                    }
+                },
+                NoteEvent::MidiPitchBend { value, channel, .. } => {
+                    let minus_one_to_one = (value - 0.5) * 2.0;
+                    channels.entry(channel).or_default().pitch_bend_semitones =
+                        minus_one_to_one * 2.0; // TODO: UI to edit pitch bend range
+                },
+                // All Sound Off
+                NoteEvent::MidiCC { channel, cc: 120, .. } => {
+                    if let Some(channel) = channels.get_mut(&channel) {
+                        for tone in &mut channel.tones {
+                            tone.on = false;
+                            #[allow(clippy::used_underscore_binding)]
+                            for v in 0..pxtn_woice._voice_num as usize {
+                                let vt = &mut tone.voice_tones[v];
+                                vt.env_start = vt.env_volume;
+                                vt.env_pos = 0;
                             }
-                        } else {
-                            log::warn!("Got NoteOff event for non-existant channel: {channel}");
                         }
-                    },
-                    NoteEvent::Choke { note, channel, .. } => {
-                        if let Some(channel) = channels.get_mut(&channel) {
-                            channel.tones.retain(|t| t.note_id != note);
-                        } else {
-                            log::warn!("Got Choke event for non-existant channel: {channel}");
-                        }
-                    },
-                    NoteEvent::PolyPressure { note: _, pressure, .. } => {
-                        self.master_gain.set_target(sample_rate, pressure);
-                    },
-                    NoteEvent::PolyTuning { channel, note, tuning, .. } => {
-                        if let Some(channel) = channels.get_mut(&channel) {
-                            if let Some(tone) =
-                                channel.tones.iter_mut().find(|t| t.on && t.note_id == note)
-                            {
-                                tone.tuning_semitones = tuning;
+                    } else {
+                        log::warn!(
+                            "Got All Sound Off (CC 120) event for non-existant channel: {channel}"
+                        );
+                    }
+                },
+                // All Notes Off
+                NoteEvent::MidiCC { channel, cc: 123, .. } => {
+                    if let Some(channel) = channels.get_mut(&channel) {
+                        for tone in &mut channel.tones {
+                            tone.on = false;
+                            #[allow(clippy::used_underscore_binding)]
+                            for v in 0..pxtn_woice._voice_num as usize {
+                                let vt = &mut tone.voice_tones[v];
+                                vt.env_start = vt.env_volume;
+                                vt.env_pos = 0;
                             }
-                        } else {
-                            log::warn!("Got PolyTuning event for non-existant channel: {channel}");
                         }
-                    },
-                    NoteEvent::MidiPitchBend { value, channel, .. } => {
-                        let minus_one_to_one = (value - 0.5) * 2.0;
-                        channels.entry(channel).or_default().pitch_bend_semitones =
-                            minus_one_to_one * 2.0; // TODO: UI to edit pitch bend range
-                    },
-                    // All Sound Off
-                    NoteEvent::MidiCC { channel, cc: 120, .. } => {
-                        if let Some(channel) = channels.get_mut(&channel) {
-                            for tone in &mut channel.tones {
-                                tone.on = false;
-                                #[allow(clippy::used_underscore_binding)]
-                                for v in 0..pxtn_woice._voice_num as usize {
-                                    let vt = &mut tone.voice_tones[v];
-                                    vt.env_start = vt.env_volume;
-                                    vt.env_pos = 0;
-                                }
-                            }
-                        } else {
-                            log::warn!("Got All Sound Off (CC 120) event for non-existant channel: {channel}");
-                        }
-                    },
-                    // All Notes Off
-                    NoteEvent::MidiCC { channel, cc: 123, .. } => {
-                        if let Some(channel) = channels.get_mut(&channel) {
-                            for tone in &mut channel.tones {
-                                tone.on = false;
-                                #[allow(clippy::used_underscore_binding)]
-                                for v in 0..pxtn_woice._voice_num as usize {
-                                    let vt = &mut tone.voice_tones[v];
-                                    vt.env_start = vt.env_volume;
-                                    vt.env_pos = 0;
-                                }
-                            }
-                        } else {
-                            log::warn!("Got All Notes Off (CC 123) event for non-existant channel: {channel}");
-                        }
-                    },
-                    _ => (),
-                }
-
-                next_event = context.next_event();
+                    } else {
+                        log::warn!(
+                            "Got All Notes Off (CC 123) event for non-existant channel: {channel}"
+                        );
+                    }
+                },
+                _ => (),
             }
         }
     }
