@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: Swatinem/rust-cache@v2.2.1
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
     
     - name: Install libs
       run: sudo apt-get -y update && sudo apt install -y freeglut3-dev libxcursor-dev libgtk-3-dev libxcb-icccm4-dev libx11-xcb-dev libxcb-dri2-0-dev libasound2-dev libjack-dev
@@ -40,27 +40,21 @@ jobs:
         include:
           - os: ubuntu-latest
             name: linux
-            vst_dir: Contents/x86_64-linux/
-            vst_ext: so
             xtask: bundle
           - os: windows-latest
             name: win
-            vst_dir: Contents/x86_64-win/
-            vst_ext: vst3
             xtask: bundle
 #           - os: macos-latest # pxtone-sys doesn't work on mac yet
 #             name: macos
-#             vst_dir: Contents/x86_64-mac/
-#             vst_ext: vst3
 #             xtask: bundle-universal
             
     runs-on: ${{ matrix.os }}
     needs: build
     steps:
-    - uses: actions/checkout@v3
-    - uses: benjlevesque/short-sha@v2.1
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    - uses: benjlevesque/short-sha@599815c8ee942a9616c92bcfb4f947a3b670ab0b # v3.0
       id: short-sha
-    - uses: Swatinem/rust-cache@v2.2.1
+    - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
       
     - name: Install libs
       if: matrix.name == 'linux'
@@ -70,19 +64,19 @@ jobs:
       run: cargo xtask ${{ matrix.xtask }} pxtone-plug --release
       
 #     - name: Upload a Build Artifact
-#       uses: actions/upload-artifact@v3
+#       uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
 #       with:
 #         name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}"
 #         path: target/bundled/
         
     - name: Upload CLAP
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
         name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.clap"
         path: target/bundled/pxtone-plug.clap
         
     - name: Upload VST3
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
       with:
-        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.${{ matrix.vst_ext }}"
-        path: "target/bundled/pxtone-plug.vst3/${{ matrix.vst_dir }}pxtone-plug.${{ matrix.vst_ext }}"
+        name: "pxtone-plug-${{ matrix.name }}-${{ steps.short-sha.outputs.sha }}.vst3"
+        path: "target/bundled/pxtone-plug.vst3"
